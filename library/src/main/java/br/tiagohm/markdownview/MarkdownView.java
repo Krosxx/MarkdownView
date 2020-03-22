@@ -5,6 +5,7 @@ import android.content.res.TypedArray;
 import android.os.AsyncTask;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 
@@ -113,6 +114,11 @@ public class MarkdownView extends WebView {
     private final HashSet<JavaScript> mScripts = new LinkedHashSet<>();
     private boolean mEscapeHtml = true;
     private Object bean;
+    private LoadListener listener;
+
+    public void setLoadListener(LoadListener lis) {
+        listener = lis;
+    }
 
     public MarkdownView(Context context) {
         this(context, null);
@@ -231,45 +237,76 @@ public class MarkdownView extends WebView {
     }
 
     public void loadMarkdown(String text) {
-        String html = parseBuildAndRender(text);
+        new Thread(new LoadTask(text)).start();
+    }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<html>\n");
-        sb.append("<head>\n");
-        //Folha de estilo padrão.
-        if (mStyleSheets.size() <= 0) {
-            mStyleSheets.add(new InternalStyleSheet());
-        }
-        //Adiciona as folhas de estilo.
-        for (StyleSheet s : mStyleSheets) {
-            sb.append(s.toHTML());
-        }
-        //Adiciona os scripts.
-        for (JavaScript js : mScripts) {
-            sb.append(js.toHTML());
+    private class LoadTask implements Runnable {
+        String text;
+
+        LoadTask(String text) {
+            this.text = text;
         }
 
-        sb.append("</head>\n");
-        sb.append("<body>\n");
-        sb.append("<div class='container'>\n");
-        sb.append(html);
-        sb.append("</div>\n");
-        sb.append("<a href='#' class='scrollup'><svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='25px' height='25px' viewBox='0 0 24 24' version='1.1'>\n" +
-                "<g><path fill='#fff' d='M 12 5.09375 L 11.28125 5.78125 L 2.28125 14.78125 L 3.71875 16.21875 L 12 7.9375 L 20.28125 16.21875 L 21.71875 14.78125 L 12.71875 5.78125 Z'></path>\n" +
-                "</g>\n" +
-                "</svg></a>");
-        sb.append("</body>\n");
-        sb.append("</html>");
+        @Override
+        public void run() {
+            if (listener != null) {
+                listener.onStartLoading();
+            }
+            final long start = System.currentTimeMillis();
+            String html = parseBuildAndRender(text);
 
-        html = sb.toString();
+            StringBuilder sb = new StringBuilder();
+            sb.append("<html>\n");
+            sb.append("<head>\n");
+            //Folha de estilo padrão.
+            if (mStyleSheets.size() <= 0) {
+                mStyleSheets.add(new InternalStyleSheet());
+            }
+            //Adiciona as folhas de estilo.
+            for (StyleSheet s : mStyleSheets) {
+                sb.append(s.toHTML());
+            }
+            //Adiciona os scripts.
+            for (JavaScript js : mScripts) {
+                sb.append(js.toHTML());
+            }
 
-        Logger.d(html);
+            sb.append("</head>\n");
+            sb.append("<body>\n");
+            sb.append("<div class='container'>\n");
+            sb.append(html);
+            sb.append("</div>\n");
+            sb.append("<a href='#' class='scrollup'><svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='25px' height='25px' viewBox='0 0 24 24' version='1.1'>\n" +
+                    "<g><path fill='#fff' d='M 12 5.09375 L 11.28125 5.78125 L 2.28125 14.78125 L 3.71875 16.21875 L 12 7.9375 L 20.28125 16.21875 L 21.71875 14.78125 L 12.71875 5.78125 Z'></path>\n" +
+                    "</g>\n" +
+                    "</svg></a>");
+            sb.append("</body>\n");
+            sb.append("</html>");
 
-        loadDataWithBaseURL("",
-                html,
-                "text/html",
-                "UTF-8",
-                "");
+            html = sb.toString();
+
+            Logger.d(html);
+
+            final String finalHtml = html;
+            post(new Runnable() {
+                @Override
+                public void run() {
+                    long end = System.currentTimeMillis();
+                    if (BuildConfig.DEBUG) {
+                        Log.d("MarkdownVIew", "load use time: " + (end - start) + "ms");
+                    }
+                    if (listener != null) {
+                        listener.onLoadComplete();
+                    }
+                    loadDataWithBaseURL("",
+                            finalHtml,
+                            "text/html",
+                            "UTF-8",
+                            "");
+                }
+            });
+
+        }
     }
 
     public void loadMarkdownFromAsset(String path) {
@@ -405,5 +442,11 @@ public class MarkdownView extends WebView {
         protected void onPostExecute(String s) {
             loadMarkdown(s);
         }
+    }
+
+    interface LoadListener {
+        void onStartLoading();
+
+        void onLoadComplete();
     }
 }
