@@ -444,7 +444,7 @@ public class MarkdownView extends WebView {
         }
     }
 
-    interface LoadListener {
+    public interface LoadListener {
         void onStartLoading();
 
         void onLoadComplete();
